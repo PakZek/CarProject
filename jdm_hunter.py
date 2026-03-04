@@ -85,7 +85,9 @@ def compute_score(ann):
     return round(score, 2)
 
 def generer_rss():
-    fg = FeedGenerator(title='JDM Deals Hunter RSS 🚗', description='Eclipse GSX > R32 > Evo VII priorisés')
+    fg = FeedGenerator()
+    fg.title('JDM Deals Hunter RSS 🚗')
+    fg.description('Eclipse GSX > R32 > Evo VII priorisés')
     fg.link(href='https://PakZek.github.io/CarProject/', rel='alternate')
     fg.language('fr')
     
