@@ -4,6 +4,7 @@ from feedgen.feed import FeedGenerator
 from datetime import datetime, timezone
 import time
 import re
+import json
 
 YEN_TO_EUR = 1 / 180
 BUDGET_UE_MAX = 25000
@@ -18,33 +19,54 @@ MODELES = {
     "supra_mkiv":   {"priorite": 6, "prix_moyen": 45000},
 }
 
-HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+HEADERS_WEB = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
+    "Accept-Language": "fr-FR,fr;q=0.9",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+}
 
-PARKING_URLS = {
-    "eclipse_gsx": "https://www.theparking.eu/used-cars/mitsubishi-eclipse-manual.html",
-    "gtr_r32":     "https://www.theparking.eu/used-cars/nissan-skyline-manual.html",
-    "evo_vii":     "https://www.theparking.eu/used-cars/mitsubishi-lancer-evolution-manual.html",
-    "gtr_r34":     "https://www.theparking.eu/used-cars/nissan-skyline-manual.html",
-    "gtr_r33":     "https://www.theparking.eu/used-cars/nissan-skyline-manual.html",
-    "supra_mkiv":  "https://www.theparking.eu/used-cars/toyota-supra-manual.html",
+HEADERS_JSON = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+    "Accept": "application/json, text/plain, */*",
+    "Content-Type": "application/json",
+    "Origin": "https://www.leboncoin.fr",
+    "Referer": "https://www.leboncoin.fr/",
 }
 
 KEYWORDS = {
-    "eclipse_gsx":  ["eclipse", "gsx", "dsm"],
-    "gtr_r32":      ["r32", "bnr32", "gt-r", "gtr"],
-    "evo_vii":      ["evo", "lancer", "evo 7", "evo vii", "ct9a"],
-    "gtr_r34":      ["r34", "bnr34", "gt-r", "gtr"],
-    "gtr_r33":      ["r33", "bcnr33", "gt-r", "gtr"],
-    "supra_mkiv":   ["mk4", "mkiv", "2jz", "1jz", "a80", "jza80", "1993", "1994", "1995", "1996", "1997", "1998"],
+    "eclipse_gsx":  ["eclipse", "gsx", "dsm", "4g63"],
+    "gtr_r32":      ["r32", "bnr32", "skyline"],
+    "evo_vii":      ["evo vii", "evo 7", "lancer evo", "ct9a", "evolution vii", "evolution 7"],
+    "gtr_r34":      ["r34", "bnr34", "skyline"],
+    "gtr_r33":      ["r33", "bcnr33", "skyline"],
+    "supra_mkiv":   ["supra", "mk4", "mkiv", "2jz", "1jz", "a80", "jza80"],
+}
+
+LBC_QUERIES = {
+    "eclipse_gsx":  "mitsubishi eclipse gsx",
+    "gtr_r32":      "nissan skyline r32",
+    "evo_vii":      "mitsubishi lancer evo 7",
+    "gtr_r34":      "nissan skyline r34",
+    "gtr_r33":      "nissan skyline r33",
+    "supra_mkiv":   "toyota supra mk4",
+}
+
+MOBILE_URLS = {
+    "eclipse_gsx":  "https://suchen.mobile.de/fahrzeuge/search.html?makeModelVariant1.makeId=17200&makeModelVariant1.modelId=9&transmission=MANUAL&maxMileage=150000&maxPrice=25000",
+    "gtr_r32":      "https://suchen.mobile.de/fahrzeuge/search.html?makeModelVariant1.makeId=18700&makeModelVariant1.modelId=77&transmission=MANUAL&maxMileage=150000&maxPrice=40000",
+    "evo_vii":      "https://suchen.mobile.de/fahrzeuge/search.html?makeModelVariant1.makeId=17200&makeModelVariant1.modelId=3&transmission=MANUAL&maxMileage=150000&maxPrice=25000",
+    "gtr_r34":      "https://suchen.mobile.de/fahrzeuge/search.html?makeModelVariant1.makeId=18700&makeModelVariant1.modelId=77&transmission=MANUAL&maxMileage=150000&maxPrice=120000",
+    "gtr_r33":      "https://suchen.mobile.de/fahrzeuge/search.html?makeModelVariant1.makeId=18700&makeModelVariant1.modelId=77&transmission=MANUAL&maxMileage=150000&maxPrice=60000",
+    "supra_mkiv":   "https://suchen.mobile.de/fahrzeuge/search.html?makeModelVariant1.makeId=23600&makeModelVariant1.modelId=21&transmission=MANUAL&maxMileage=150000&maxPrice=45000",
 }
 
 GOO_URLS = {
-    "eclipse_gsx": "https://www.goo-net-exchange.com/usedcars/MITSUBISHI/ECLIPSE/?transmission=2",
-    "gtr_r32":     "https://www.goo-net-exchange.com/usedcars/NISSAN/SKYLINE_GT_R/?transmission=2",
-    "evo_vii":     "https://www.goo-net-exchange.com/usedcars/MITSUBISHI/LANCER_EVOLUTION/?transmission=2",
-    "gtr_r34":     "https://www.goo-net-exchange.com/usedcars/NISSAN/SKYLINE_GT_R/?transmission=2",
-    "gtr_r33":     "https://www.goo-net-exchange.com/usedcars/NISSAN/SKYLINE_GT_R/?transmission=2",
-    "supra_mkiv":  "https://www.goo-net-exchange.com/usedcars/TOYOTA/SUPRA/?transmission=2",
+    "eclipse_gsx": "https://www.goo-net-exchange.com/usedcars/MITSUBISHI/ECLIPSE/?transmission=2&mileage_to=150000",
+    "gtr_r32":     "https://www.goo-net-exchange.com/usedcars/NISSAN/SKYLINE_GT_R/?transmission=2&mileage_to=150000",
+    "evo_vii":     "https://www.goo-net-exchange.com/usedcars/MITSUBISHI/LANCER_EVOLUTION/?transmission=2&mileage_to=150000",
+    "gtr_r34":     "https://www.goo-net-exchange.com/usedcars/NISSAN/SKYLINE_GT_R/?transmission=2&mileage_to=150000",
+    "gtr_r33":     "https://www.goo-net-exchange.com/usedcars/NISSAN/SKYLINE_GT_R/?transmission=2&mileage_to=150000",
+    "supra_mkiv":  "https://www.goo-net-exchange.com/usedcars/TOYOTA/SUPRA/?transmission=2&mileage_to=150000",
 }
 
 
@@ -64,66 +86,124 @@ def compute_score(prix_net, km, annee, prix_moyen, risque_rti):
     return round((qualite / prix_rel) * risque, 2)
 
 
-def parse_prix(text):
-    digits = re.sub(r"[^0-9]", "", text)
-    return int(digits) if digits else 0
-
-
-def parse_km(text):
-    digits = re.sub(r"[^0-9]", "", text)
+def nettoyer_nombre(text):
+    digits = re.sub(r"[^0-9]", "", str(text))
     return int(digits) if digits else 0
 
 
 def keyword_match(text, modele):
-    text_lower = text.lower()
-    return any(kw in text_lower for kw in KEYWORDS[modele])
+    return any(kw in text.lower() for kw in KEYWORDS[modele])
 
 
-def scrape_parking(modele):
-    url = PARKING_URLS[modele]
+def scrape_leboncoin(modele):
     annonces = []
     try:
-        resp = requests.get(url, headers=HEADERS, timeout=15)
-        soup = BeautifulSoup(resp.text, "html.parser")
-        for tag in soup.find_all(string=re.compile(r"Detail")):
-            parent = tag.find_parent()
-            if not parent:
+        payload = {
+            "filters": {
+                "category": {"id": "2"},
+                "keywords": {"text": LBC_QUERIES[modele]},
+                "enums": {"transmission": ["manual"]},
+                "ranges": {
+                    "mileage": {"max": 150000},
+                    "price": {"max": BUDGET_UE_MAX}
+                }
+            },
+            "limit": 10,
+            "sort_by": "price",
+            "sort_order": "asc"
+        }
+        resp = requests.post(
+            "https://api.leboncoin.fr/finder/search",
+            headers=HEADERS_JSON,
+            json=payload,
+            timeout=15
+        )
+        if resp.status_code != 200:
+            print(f"  [lbc] {modele} HTTP {resp.status_code}")
+            return []
+        data = resp.json()
+        for ad in data.get("ads", []):
+            titre = ad.get("subject", "")
+            if not keyword_match(titre, modele):
                 continue
-            block_text = parent.get_text(" ", strip=True)
-            prix_match = re.search(r"([0-9][0-9,\.]+)\s*€", block_text)
-            if not prix_match:
-                continue
-            prix = parse_prix(prix_match.group(1))
+            prix = nettoyer_nombre(ad.get("price", [0])[0] if ad.get("price") else 0)
             if prix <= 0 or prix > BUDGET_UE_MAX:
                 continue
-            km_match = re.search(r"([0-9][0-9,\.]+)\s*[Kk]m", block_text)
-            km = parse_km(km_match.group(1)) if km_match else 0
+            attrs = {a.get("key"): a.get("value_label", a.get("value")) for a in ad.get("attributes", [])}
+            km = nettoyer_nombre(attrs.get("mileage", 0))
             if km > 150000:
                 continue
-            annee_match = re.search(r"\b(19[89][0-9]|200[0-5])\b", block_text)
-            annee = int(annee_match.group(1)) if annee_match else 1995
-            if "manual" not in block_text.lower():
-                continue
-            if not keyword_match(block_text, modele):
-                continue
-            if "UNITED KINGDOM" in block_text.upper() or " UK" in block_text.upper():
-                continue
-            pays = "UE"
-            for p in ["FRANCE", "GERMANY", "NETHERLANDS", "BELGIUM", "SPAIN", "ITALY", "PORTUGAL"]:
-                if p in block_text.upper():
-                    pays = p.capitalize()
-                    break
-            lien_tag = parent.find("a", href=True)
-            lien = lien_tag["href"] if lien_tag else url
-            if lien and not lien.startswith("http"):
-                lien = "https://www.theparking.eu" + lien
+            annee = int(str(attrs.get("regdate", "1995"))[:4]) if attrs.get("regdate") else 1995
+            lien = f"https://www.leboncoin.fr/voitures/{ad.get('list_id')}.htm"
             annonces.append({
                 "modele": modele, "prix_net": prix, "km": km, "annee": annee,
-                "pays": pays, "type": "UE", "risque_rti": "faible",
-                "lien": lien, "titre": block_text[:80],
+                "pays": "France", "type": "UE", "risque_rti": "faible",
+                "lien": lien, "titre": titre[:80],
             })
     except Exception as e:
-        print(f"  [parking] {modele} erreur: {e}")
+        print(f"  [lbc] {modele} erreur: {e}")
+    return annonces[:5]
+
+
+def scrape_mobile(modele):
+    url = MOBILE_URLS[modele]
+    annonces = []
+    try:
+        resp = requests.get(url, headers=HEADERS_WEB, timeout=15)
+        soup = BeautifulSoup(resp.text, "html.parser")
+        script = soup.find("script", id="__NEXT_DATA__")
+        if script:
+            data = json.loads(script.string)
+            listings = (data.get("props", {})
+                           .get("pageProps", {})
+                           .get("searchResult", {})
+                           .get("items", []))
+            for item in listings[:8]:
+                titre = item.get("title", "")
+                if not keyword_match(titre, modele):
+                    continue
+                prix = nettoyer_nombre(item.get("price", {}).get("amountInEuro", 0))
+                if prix <= 0 or prix > BUDGET_UE_MAX:
+                    continue
+                km = nettoyer_nombre(item.get("mileageInKm", 0))
+                if km > 150000:
+                    continue
+                annee = item.get("firstRegistration", {}).get("year", 1995) or 1995
+                lien = "https://suchen.mobile.de" + item.get("relativeUrl", "")
+                pays = item.get("seller", {}).get("countryCode", "DE")
+                if pays == "GB":
+                    continue
+                annonces.append({
+                    "modele": modele, "prix_net": prix, "km": km, "annee": annee,
+                    "pays": pays, "type": "UE", "risque_rti": "faible",
+                    "lien": lien, "titre": titre[:80],
+                })
+        else:
+            for article in soup.find_all("article")[:8]:
+                texte = article.get_text(" ", strip=True)
+                if not keyword_match(texte, modele):
+                    continue
+                prix_m = re.search(r"([0-9][0-9.]+)\s*EUR", texte)
+                km_m = re.search(r"([0-9][0-9.]+)\s*km", texte, re.I)
+                annee_m = re.search(r"\b(19[89][0-9]|200[0-5])\b", texte)
+                if not prix_m:
+                    continue
+                prix = nettoyer_nombre(prix_m.group(1))
+                km = nettoyer_nombre(km_m.group(1)) if km_m else 0
+                annee = int(annee_m.group(1)) if annee_m else 1995
+                if prix <= 0 or prix > BUDGET_UE_MAX or km > 150000:
+                    continue
+                lien_tag = article.find("a", href=True)
+                lien = lien_tag["href"] if lien_tag else url
+                if not lien.startswith("http"):
+                    lien = "https://suchen.mobile.de" + lien
+                annonces.append({
+                    "modele": modele, "prix_net": prix, "km": km, "annee": annee,
+                    "pays": "EU", "type": "UE", "risque_rti": "faible",
+                    "lien": lien, "titre": texte[:80],
+                })
+    except Exception as e:
+        print(f"  [mobile] {modele} erreur: {e}")
     return annonces[:5]
 
 
@@ -131,7 +211,7 @@ def scrape_goo(modele):
     url = GOO_URLS[modele]
     annonces = []
     try:
-        resp = requests.get(url, headers=HEADERS, timeout=15)
+        resp = requests.get(url, headers=HEADERS_WEB, timeout=15)
         soup = BeautifulSoup(resp.text, "html.parser")
         for h3 in soup.find_all("h3"):
             try:
@@ -144,21 +224,21 @@ def scrape_goo(modele):
                     continue
                 if not keyword_match(titre + " " + block, modele):
                     continue
-                yen_match = re.search(r"¥([0-9,]+)", block)
-                if not yen_match:
+                if "¥" not in block:
                     continue
-                prix_yen = parse_prix(yen_match.group(1))
-                if prix_yen <= 0:
+                yen_text = block.split("¥")[1][:15]
+                prix_yen = nettoyer_nombre(yen_text)
+                if not prix_yen:
                     continue
                 ptrf = calcul_ptrf(prix_yen)
                 if ptrf > BUDGET_IMPORT_MAX:
                     continue
-                km_match = re.search(r"([0-9,]+)\s*km", block, re.IGNORECASE)
-                km = parse_km(km_match.group(1)) if km_match else 0
+                km_m = re.search(r"([0-9,]+)\s*km", block, re.I)
+                km = nettoyer_nombre(km_m.group(1)) if km_m else 0
                 if km > 150000:
                     continue
-                annee_match = re.search(r"(19[89][0-9]|200[0-5])\.", block)
-                annee = int(annee_match.group(1)) if annee_match else 1997
+                annee_m = re.search(r"(19[89][0-9]|200[0-5])", block)
+                annee = int(annee_m.group(1)) if annee_m else 1997
                 lien_tag = h3.find("a", href=True) or parent.find("a", href=True)
                 lien = lien_tag["href"] if lien_tag else url
                 if lien and not lien.startswith("http"):
@@ -185,11 +265,14 @@ def generer_rss():
     toutes = []
     for modele, infos in MODELES.items():
         print(f"Scraping {modele}...")
-        time.sleep(2)
-        ue = scrape_parking(modele)
+        lbc = scrape_leboncoin(modele)
+        time.sleep(1)
+        mob = scrape_mobile(modele)
+        time.sleep(1)
         jp = scrape_goo(modele)
-        print(f"  -> UE: {len(ue)} | JP: {len(jp)}")
-        for ann in ue + jp:
+        time.sleep(1)
+        print(f"  -> LBC: {len(lbc)} | Mobile.de: {len(mob)} | JP: {len(jp)}")
+        for ann in lbc + mob + jp:
             score = compute_score(
                 ann["prix_net"], ann["km"], ann["annee"],
                 infos["prix_moyen"], ann["risque_rti"]
@@ -204,14 +287,14 @@ def generer_rss():
         fe = fg.add_entry()
         flag = "JP" if ann["type"] == "Import" else "EU"
         budget_info = f"{ann['prix_net']}EUR (incl. import)" if ann["type"] == "Import" else f"{ann['prix_net']}EUR"
-        titre = (
+        titre_rss = (
             f"[{flag}][{ann['modele'].upper()}] {ann['annee']} MT "
             f"{ann['km']}km | {budget_info} | score {score}"
         )
-        fe.title(titre)
+        fe.title(titre_rss)
         fe.id(ann["lien"])
         fe.link(href=ann["lien"])
-        yen_info = f" | Prix Japon: {ann['prix_yen']:,}JPY" if "prix_yen" in ann else ""
+        yen_info = f" | Japon: {ann['prix_yen']:,}JPY" if "prix_yen" in ann else ""
         fe.description(
             f"Prix: {ann['prix_net']}EUR{yen_info} | Km: {ann['km']} | "
             f"Annee: {ann['annee']} | Pays: {ann['pays']} | "
