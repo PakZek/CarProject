@@ -7,8 +7,8 @@ import re
 import json
 
 YEN_TO_EUR = 1 / 180
-BUDGET_UE_MAX = 25000
-BUDGET_IMPORT_MAX = 20000
+BUDGET_UE_MAX = 40000
+BUDGET_IMPORT_MAX = 35000
 
 MODELES = {
     "eclipse_gsx":  {"priorite": 1, "prix_moyen": 22000},
