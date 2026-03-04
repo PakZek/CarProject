@@ -1,75 +1,121 @@
 import requests
 from bs4 import BeautifulSoup
 from feedgen.feed import FeedGenerator
-import schedule, time
 from datetime import datetime
-YEN_TO_EUR = 1/180  # Ton taux fixe
+import time  # Pour delays anti-ban
 
-# Prix marché moyens (de tes convos + sources)
+YEN_TO_EUR = 1 / 180
+BUDGET_UE_MAX = 25000
+BUDGET_IMPORT_MAX = 20000
 MODELES = {
-    'eclipse_gsx': {'priorite':1, 'prix_moyen_ue':22000, 'chassis':'1G2MB35B*'},
-    'gtr_r32': {'priorite':2, 'prix_moyen_ue':40000, 'chassis':'BNR32'},
-    'evo_vii': {'priorite':3, 'prix_moyen_ue':25000, 'chassis':'CT9A'},
-    'gtr_r34': {'priorite':4, 'prix_moyen_ue':120000, 'chassis':'BNR34'},
-    'gtr_r33': {'priorite':5, 'prix_moyen_ue':60000, 'chassis':'BCNR33'},
-    'supra_mkiv': {'priorite':6, 'prix_moyen_ue':45000, 'chassis':'JZA80'}
+    'eclipse_gsx': {'priorite': 1, 'prix_moyen': 22000},
+    'gtr_r32': {'priorite': 2, 'prix_moyen': 40000},
+    'evo_vii': {'priorite': 3, 'prix_moyen': 25000},
+    'gtr_r34': {'priorite': 4, 'prix_moyen': 120000},
+    'gtr_r33': {'priorite': 5, 'prix_moyen': 60000},
+    'supra_mkiv': {'priorite': 6, 'prix_moyen': 45000}
 }
 
-def scrape_source(url_base, modele):
-    # Ex scrape theparking.eu
-    params = {'make':'Toyota', 'model':'Supra', 'gear':'manual', 'km_max':150000}  # Par modèle
-    resp = requests.get(url_base.format(modele), params=params)
-    soup = BeautifulSoup(resp.text, 'html.parser')
-    annonces = []
-    for item in soup.find_all('div', class_='annonce'):
-        prix = float(item.find('span', class_='price').text.replace('€',''))
-        km = int(item.find('span', 'km').text.replace('km',''))
-        if prix > 25000 or km > 150000: continue  # Budget UE
-        # Parse état, CT mention, etc.
-        annonces.append({'prix_net':prix, 'km':km, 'lien':item.a['href'], 'pays':'FR', 'type':'UE'})
-    return annonces
+headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
 
-def calcul_ptrf(annonce_japon):
-    prix_y = annonce_japon['prix_yen']
-    achat_eur = prix_y * YEN_TO_EUR
+def scrape_parking(modele):
+    # Recherche theparking.eu manuelle <150k km
+    search_terms = modele.replace('_', ' ')
+    url = f"https://www.theparking.eu/used-cars/{search_terms}-manual.html"
+    try:
+        resp = requests.get(url, headers=headers, timeout=10)
+        soup = BeautifulSoup(resp.text, 'html.parser')
+        annonces = []
+        for item in soup.find_all('article', class_='search-result')[:5]:  # Selectors réalistes
+            prix_el = item.find('span', {'data-cy': 'price'}) or item.find(class_='price')
+            if not prix_el: continue
+            prix_text = prix_el.text.strip().replace('€', '').replace(',', '')
+            prix = float(''.join(filter(str.isdigit, prix_text))) / 1000 if prix_text else 99999
+            km_el = item.find(class_='km') or item.find(string=lambda t: 'km' in t.lower())
+            km = int(''.join(filter(str.isdigit, str(km_el)))) if km_el else 999999
+            if prix > BUDGET_UE_MAX or km > 150000: continue
+            lien = item.find('a')['href'] if item.find('a') else url
+            if not lien.startswith('http'): lien = 'https://theparking.eu' + lien
+            annonces.append({
+                'modele': modele, 'prix_net': prix * 1000, 'km': km, 'lien': lien,
+                'annee': 1998, 'pays': 'UE Sud', 'type': 'UE', 'risque_rti': 'faible'
+            })
+        return annonces
+    except:
+        return []
+
+def scrape_goo(modele):
+    url = f"https://www.goo-net-exchange.com/catalogs/?q={modele.replace('_', ' ')}&makerCode=0&modelCode=0"
+    try:
+        resp = requests.get(url, headers=headers, timeout=10)
+        soup = BeautifulSoup(resp.text, 'html.parser')
+        annonces = []
+        for item in soup.find_all('div', class_='car-list-item')[:3]:
+            prix_y_el = item.find(class_='price')
+            if not prix_y_el: continue
+            prix_y_text = prix_y_el.text.strip().replace('¥', '').replace(',', '')
+            prix_y = float(''.join(filter(str.isdigit, prix_y_text)))
+            ptrf = calcul_ptrf({'prix_yen': prix_y})
+            if ptrf > BUDGET_IMPORT_MAX: continue
+            km_el = item.find(class_='mileage')
+            km = int(''.join(filter(str.isdigit, str(km_el)))) if km_el else 999999
+            if km > 150000: continue
+            lien = 'https://goo-net-exchange.com' + item.find('a')['href'] if item.find('a') else url
+            annonces.append({
+                'modele': modele, 'prix_net': ptrf, 'km': km, 'lien': lien,
+                'annee': 1997, 'pays': 'Japon', 'type': 'Import', 'risque_rti': 'moyen (RHD/CT)'
+            })
+        return annonces
+    except:
+        return []
+
+def calcul_ptrf(annonce_jp):
+    achat_eur = annonce_jp['prix_yen'] * YEN_TO_EUR
     fret_port = 3000
     douane = achat_eur * 0.10
     tva = (achat_eur + douane) * 0.20
     rti = 4500 + 150
-    return achat_eur + fret_port + douane + tva + rti
+    return round(achat_eur + fret_port + douane + tva + rti)
 
-def compute_score(annonce, modele):
-    qualite = (1 - annonce['km']/150000) * (1 - (2026 - annonce['annee'])/30)
-    prix_relatif = min(annonce['prix_net'] / MODLES[modele]['prix_moyen_ue'], 1)
-    risque = 1.0  # Ajuste -0.2 si mods risquées, +0.1 proximité Sud FR
-    return (qualite / prix_relatif) * risque
+def compute_score(ann):
+    qualite = max(0, (1 - ann['km'] / 150000) * (1 - (2026 - ann['annee']) / 30))
+    prix_rel = min(ann['prix_net'] / MODELES[ann['modele']]['prix_moyen'], 1)
+    risque = 0.8 if 'moyen' in ann['risque_rti'] else 1.0
+    score = (qualite / prix_rel) * risque
+    return round(score, 2)
 
 def generer_rss():
-    fg = FeedGenerator(title='JDM Deals Hunter', link='ton-site.com/rss')
-    toutes_annonces = []
-    # Scrape toutes sources
-    for modele in MODLES:
-        ue_ann = scrape_source('https://theparking.eu/used-cars/{}.html'.format(modele), modele)
-        jp_ann = scrape_source('https://goo-net-exchange.com/{}/'.format(modele), modele)
-        for ann in ue_ann + jp_ann:
-            if 'japon' in ann['type']: ann['prix_net'] = calcul_ptrf(ann)
-            if ann['prix_net'] > (20000 if 'japon' in ann['type'] else 25000): continue
-            score = compute_score(ann, modele)
+    fg = FeedGenerator(title='JDM Deals Hunter RSS 🚗', description='Eclipse GSX > R32 > Evo VII priorisés')
+    fg.link(href='https://PakZek.github.io/CarProject/', rel='alternate')
+    fg.language('fr')
+    
+    toutes = []
+    print("🔍 Scraping...")
+    for modele in MODELES:
+        print(f"  {modele}...")
+        time.sleep(1)  # Anti-ban
+        ue = scrape_parking(modele)
+        jp = scrape_goo(modele)
+        for ann in ue + jp:
+            score = compute_score(ann)
             if score >= 0.70:
-                toutes_annonces.append((score, ann, modele))
-    # Trier par score desc, priorite
-    top_ann = sorted(toutes_annonces, key=lambda x: (x[0], -MODLES[x[2]]['priorite']))[:20]
-    for score, ann, mod in top_ann:
+                toutes.append((score, ann))
+    
+    top = sorted(toutes, key=lambda x: (-x[0], MODELES[x[1]['modele']]['priorite']))[:15]
+    print(f"✅ {len(top)} deals qualifiés (top score: {top[0][0] if top else 0})")
+    
+    for score, ann in top:
         fe = fg.add_entry()
-        fe.title(f"[{mod.upper()}] {ann['annee']} MT {ann['km']}km - {ann['prix_net']:.0f}€ (score {score:.2f})")
+        titre = f"[{ann['modele'].upper()}] {ann['annee']} MT {ann['km']/1000:.0f}k km | {ann['prix_net']:.0f}€ (score {score}) | {ann['pays']}"
+        fe.title(titre)
+        fe.id(ann['lien'])
         fe.link(href=ann['lien'])
-        fe.description(f"...")  # Détails + risques
+        desc = f"**Prix** : {ann['prix_net']:.0f}€ | **Risque RTI** : {ann['risque_rti']} | **Type** : {ann['type']}\n[Ouvrir]({ann['lien']})"
+        fe.description(desc)
+        fe.pubDate(datetime.utcnow())
+    
     fg.rss_file('jdm-deals-hunter.xml')
+    print("📡 RSS généré !")
 
-# Scheduler
-schedule.every().day.at("08:00").do(generer_rss)  # Quotidien
-schedule.every(1).hours.do(lambda: generer_rss() if check_top_deal() else None)  # Horaire si >=0.95
-
-while True:
-    schedule.run_pending()
-    time.sleep(1)
+if __name__ == '__main__':
+    generer_rss()
