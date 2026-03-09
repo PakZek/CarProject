@@ -6,18 +6,47 @@ import time
 import re
 import json
 
-YEN_TO_EUR = 1 / 180
-BUDGET_UE_MAX = 50000
-BUDGET_IMPORT_MAX = 45000
+# BUDGETS OPTIMISÉS 2026
+YEN_TO_EUR = 1 / 180  # prix du Yen
+BUDGET_UE_MAX = 45000  # UE: 35k€
+BUDGET_IMPORT_MAX = 40000  # Import: 30k€ (incl. fret/douane/TVA)
 
 MODELES = {
-    "eclipse_gsx":  {"priorite": 1, "prix_moyen": 22000},
-    "gtr_r32":      {"priorite": 2, "prix_moyen": 40000},
-    "evo_vii":      {"priorite": 3, "prix_moyen": 25000},
-    "gtr_r34":      {"priorite": 4, "prix_moyen": 120000},
-    "gtr_r33":      {"priorite": 5, "prix_moyen": 60000},
-    "supra_mkiv":   {"priorite": 6, "prix_moyen": 45000},
+    "eclipse_gsx":  {"priorite": 1, "prix_moyen": 20000},
+    "gtr_r32":      {"priorite": 2, "prix_moyen": 35000},
+    "evo_vii":      {"priorite": 3, "prix_moyen": 22000},
+    "gtr_r34":      {"priorite": 4, "prix_moyen": 100000},
+    "gtr_r33":      {"priorite": 5, "prix_moyen": 55000},
+    "supra_mkiv":   {"priorite": 6, "prix_moyen": 40000},
 }
+
+# 3 SITES UNIQUEMENT (fonctionnels 2026)
+BEFORWARD_URLS = {
+    "eclipse_gsx": "https://www.beforward.jp/stocklist/make/MITSUBISHI/model/ECLIPSE/?transmission=MT&mileage_to=150000",
+    "gtr_r32":     "https://www.beforward.jp/stocklist/make=NISSAN/model=SKYLINE/?transmission=MT&mileage_to=150000",
+    "evo_vii":     "https://www.beforward.jp/stocklist/make=MITSUBISHI/model=LANCER/?transmission=MT&mileage_to=150000",
+    "gtr_r34":     "https://www.beforward.jp/stocklist/make=NISSAN/model=SKYLINE/?transmission=MT&mileage_to=150000",
+    "gtr_r33":     "https://www.beforward.jp/stocklist/make=NISSAN/model=SKYLINE/?transmission=MT&mileage_to=150000",
+    "supra_mkiv":  "https://www.beforward.jp/stocklist/make=TOYOTA/model=SUPRA/?transmission=MT&mileage_to=150000",
+}
+
+CFJ_URLS = {
+    "eclipse_gsx": "https://www.carfromjapan.com/cheap-used-mitsubishi-eclipse-for-sale/?transmission=manual&mileage_to=150000",
+    "gtr_r32":     "https://www.carfromjapan.com/cheap-used-nissan-skyline-for-sale/?transmission=manual&mileage_to=150000",
+    "evo_vii":     "https://www.carfromjapan.com/cheap-used-mitsubishi-lancer-evolution-for-sale/?transmission=manual&mileage_to=150000",
+    "gtr_r34":     "https://www.carfromjapan.com/cheap-used-nissan-skyline-for-sale/?transmission=manual&mileage_to=150000",
+    "gtr_r33":     "https://www.carfromjapan.com/cheap-used-nissan-skyline-for-sale/?transmission=manual&mileage_to=150000",
+    "supra_mkiv":  "https://www.carfromjapan.com/cheap-used-toyota-supra-for-sale/?transmission=manual&mileage_to=150000",
+}
+
+AUTOUNCLE_URLS = {
+    "eclipse_gsx": "https://www.autouncle.fr/fr/voitures-occasion/mitsubishi/eclipse?transmission=manual&max_price=35000&max_mileage=150000",
+    "gtr_r32":     "https://www.autouncle.fr/fr/voitures-occasion/nissan/skyline?transmission=manual&max_price=35000&max_mileage=150000",
+    "evo_vii":     "https://www.autouncle.fr/fr/voitures-occasion/mitsubishi/lancer?transmission=manual&max_price=35000&max_mileage=150000",
+    "gtr_r34":     "https://www.autuncle.fr/fr/voitures-occasion/nissan/skyline?transmission=manual&max_price=100000&max_mileage=150000",
+    "gtr_r33":     "https://www.autuncle.fr/fr/voitures-occasion/nissan/skyline?transmission=manual&max_price=55000&max_mileage=150000",
+    "supra_mkiv":  "https://www.autuncle.fr/fr/voitures-occasion/toyota/supra?transmission=manual&max_price=40000&max_mileage
+
 
 HEADERS_LIST = [
     {
@@ -50,60 +79,6 @@ KEYWORDS = {
     "gtr_r34":      ["r34", "bnr34", "skyline", "gt-r"],
     "gtr_r33":      ["r33", "bcnr33", "skyline", "gt-r"],
     "supra_mkiv":   ["supra", "mk4", "mkiv", "2jz", "1jz", "a80", "jza80"],
-}
-
-BEFORWARD_URLS = {
-    "eclipse_gsx": "https://www.beforward.jp/stocklist/make/MITSUBISHI/model/ECLIPSE/transmission/MT/mileage_to/150000/",
-    "gtr_r32":     "https://www.beforward.jp/stocklist/make/NISSAN/model/SKYLINE/transmission/MT/mileage_to/150000/",
-    "evo_vii":     "https://www.beforward.jp/stocklist/make/MITSUBISHI/model/LANCER/transmission/MT/mileage_to/150000/",
-    "gtr_r34":     "https://www.beforward.jp/stocklist/make/NISSAN/model/SKYLINE/transmission/MT/mileage_to/150000/",
-    "gtr_r33":     "https://www.beforward.jp/stocklist/make/NISSAN/model/SKYLINE/transmission/MT/mileage_to/150000/",
-    "supra_mkiv":  "https://www.beforward.jp/stocklist/make/TOYOTA/model/SUPRA/transmission/MT/mileage_to/150000/",
-}
-
-CFJ_URLS = {
-    "eclipse_gsx": "https://www.carfromjapan.com/cheap-used-mitsubishi-eclipse-for-sale/?transmission=manual&mileage_to=150000",
-    "gtr_r32":     "https://www.carfromjapan.com/cheap-used-nissan-skyline-for-sale/?transmission=manual&mileage_to=150000",
-    "evo_vii":     "https://www.carfromjapan.com/cheap-used-mitsubishi-lancer-evolution-for-sale/?transmission=manual&mileage_to=150000",
-    "gtr_r34":     "https://www.carfromjapan.com/cheap-used-nissan-skyline-for-sale/?transmission=manual&mileage_to=150000",
-    "gtr_r33":     "https://www.carfromjapan.com/cheap-used-nissan-skyline-for-sale/?transmission=manual&mileage_to=150000",
-    "supra_mkiv":  "https://www.carfromjapan.com/cheap-used-toyota-supra-for-sale/?transmission=manual&mileage_to=150000",
-}
-
-GOO_URLS = {
-    "eclipse_gsx": "https://www.goo-net-exchange.com/usedcars/MITSUBISHI/ECLIPSE/?transmission=2&mileage_to=150000",
-    "gtr_r32":     "https://www.goo-net-exchange.com/usedcars/NISSAN/SKYLINE_GT_R/?transmission=2&mileage_to=150000",
-    "evo_vii":     "https://www.goo-net-exchange.com/usedcars/MITSUBISHI/LANCER_EVOLUTION/?transmission=2&mileage_to=150000",
-    "gtr_r34":     "https://www.goo-net-exchange.com/usedcars/NISSAN/SKYLINE_GT_R/?transmission=2&mileage_to=150000",
-    "gtr_r33":     "https://www.goo-net-exchange.com/usedcars/NISSAN/SKYLINE_GT_R/?transmission=2&mileage_to=150000",
-    "supra_mkiv":  "https://www.goo-net-exchange.com/usedcars/TOYOTA/SUPRA/?transmission=2&mileage_to=150000",
-}
-
-JCD_URLS = {
-    "eclipse_gsx": "https://www.japancardirect.com/search/?make=mitsubishi&model=eclipse&transmission=manual",
-    "gtr_r32":     "https://www.japancardirect.com/search/?make=nissan&model=skyline&transmission=manual",
-    "evo_vii":     "https://www.japancardirect.com/search/?make=mitsubishi&model=lancer+evolution&transmission=manual",
-    "gtr_r34":     "https://www.japancardirect.com/search/?make=nissan&model=skyline&transmission=manual",
-    "gtr_r33":     "https://www.japancardirect.com/search/?make=nissan&model=skyline&transmission=manual",
-    "supra_mkiv":  "https://www.japancardirect.com/search/?make=toyota&model=supra&transmission=manual",
-}
-
-JDMHEAVEN_URLS = {
-    "eclipse_gsx": "https://www.jdmheaven.club/vehicles/?make=mitsubishi&model=eclipse&transmission=manual",
-    "gtr_r32":     "https://www.jdmheaven.club/vehicles/?make=nissan&model=skyline-r32&transmission=manual",
-    "evo_vii":     "https://www.jdmheaven.club/vehicles/?make=mitsubishi&model=lancer-evolution&transmission=manual",
-    "gtr_r34":     "https://www.jdmheaven.club/vehicles/?make=nissan&model=skyline-r34&transmission=manual",
-    "gtr_r33":     "https://www.jdmheaven.club/vehicles/?make=nissan&model=skyline-r33&transmission=manual",
-    "supra_mkiv":  "https://www.jdmheaven.club/vehicles/?make=toyota&model=supra&transmission=manual",
-}
-
-AUTOUNCLE_URLS = {
-    "eclipse_gsx": "https://www.autouncle.fr/fr/voitures-occasion/mitsubishi/eclipse?transmission=manual&max_price=25000&max_mileage=150000",
-    "gtr_r32":     "https://www.autouncle.fr/fr/voitures-occasion/nissan/skyline?transmission=manual&max_price=40000&max_mileage=150000",
-    "evo_vii":     "https://www.autouncle.fr/fr/voitures-occasion/mitsubishi/lancer?transmission=manual&max_price=25000&max_mileage=150000",
-    "gtr_r34":     "https://www.autouncle.fr/fr/voitures-occasion/nissan/skyline?transmission=manual&max_price=120000&max_mileage=150000",
-    "gtr_r33":     "https://www.autouncle.fr/fr/voitures-occasion/nissan/skyline?transmission=manual&max_price=60000&max_mileage=150000",
-    "supra_mkiv":  "https://www.autouncle.fr/fr/voitures-occasion/toyota/supra?transmission=manual&max_price=45000&max_mileage=150000",
 }
 
 
